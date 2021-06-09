@@ -1,0 +1,349 @@
+
+---
+title: "Gene Expression of Cancer in RNA-Seq, Clustering, and Classification"
+author: '*_Andrea Debeni, Beksultan Tuleev_*'
+output:
+  html_notebook: default
+  pdf_document: default
+---
+
+## **Information about data**
+
+### The project
+Cancer is one of the most studied diseases worldwide: the history of medicine is studded with projects and researches that aim to find explanations to the causes of different forms of cancer, and the more technology develops, the more tools are provided to the scientific community to address this extremely complex matter.  
+In this context acts The Cancer Genome (TCGA) Research Network, which analyzes and profiles a large number of human tumors to discover molecular aberrations at the DNA, RNA, protein, and epigenetic levels. The resulting data can be used to find commonalities, differences, and emergent themes across tumor lineages. With this focus, the Pan-Cancer initiative compares the first 12 tumor types profiled by TCGA: the analysis of the molecular aberrations can result in improved comprehension of the phenomena, hence therapies effective in certain cancer types could be extended to others presenting a similar genomic profile.
+
+### The dataset
+
+The dataset is part of Ribonucleic Acid Sequence (RNA-seq) from the Pancreatic Cancer Action Network (PanCAN). Dataset is a random gene expression extraction from patients who have different types of tumor cancer. Among the 12 analyzed by the PanCAN project, five of them were included in the dataset: The Cancer Genome Atlas Breast Invasive Carcinoma (TCGA-BRCA or BRCA), The Cancer Genome Atlas Kidney Renal Clear Cell Carcinoma (TCGA-KIRC or KIRC), The Cancer Genome Atlas Colon Adenocarcinoma (TCGA-COAD or COAD), The Cancer Genome Atlas Lung Adenocarcinoma (TCGA-LUAD or LUAD), and The Cancer Genome Atlas Prostate Adenocarcinoma (TCGA-PRAD or PRAD).
+
+Samples (instances) are stored row-wise. Variables (attributes) of each sample are RNA-Seq gene expression levels measured by illumina HiSeq platform. RNA-Seq is a sequencing technique that aims to reveal the presence and quantity of RNA in a biological sample at a given moment, analyzing the changing cellular transcriptome. Gene expression is quantified by counting the number of reads that are mapped to each locus in the transcriptome assembly step, namely the first step of the process.
+
+Sources: https://archive.ics.uci.edu/ml/datasets/gene+expression+cancer+RNA-Seq
+
+Weinstein, John N., et al. *The cancer genome atlas pan-cancer analysis project*, Nature genetics 45.10 (2013): 1113-1120, DOI: https://dx.doi.org/10.1038%2Fng.2764
+
+
+## **Cleaning part**
+
+The dataset contains 801 samples and 20 531 genes. Although the data matrix is complete and has no empty cells (NA) in it, some genes have too many zeros. Some genes have zero in total column sum, therefore It is unclear whether NAs were substituted with zeros or not. Since we do not know whether zeros are valuable information or not, to eliminate “dead” genes, only columns with a sum value higher than 2000 are considered in further analysis. This number is the author’s choice and it has no specific strategy. After this filtering, the total amount of genes has dropped roughly from 20 thousand to 15 thousand. 
+```{r}
+con<-url('https://www.dropbox.com/s/g2hu0un7ue8kqla/0_genes_raw_data.RData?dl=1') # Create connection
+load(con) #Load the data
+close(con) #close connection
+
+initial_data_copy <- data #make a copy of dataset
+row.names(data) <- data$X #give names to each row
+data$X <- NULL #removing name row
+matrix_test <- data.matrix(data) #converting to data matrix
+data_snapshot <- data.frame(matrix_test[, which(colSums(data)>2000)]) #clean columns
+
+
+#merging with labels
+class <- labels$Class
+data_snapshot <- cbind(data_snapshot, class)
+```
+The cleaned data set was split into ‘training’ and ‘testing’ sets with a ratio 75/25
+```{r}
+#split data
+library(caTools)
+set.seed(123)
+split = sample.split(data_snapshot$class, SplitRatio = 0.75)
+training_data = subset(data_snapshot, split == T)
+testing_data = subset(data_snapshot, split == F)
+```
+
+
+## **Methods used**
+
+The main strategy applied to the current dataset is classification and clustering, therefore few methods were applied to satisfy the targeted goal. Since the shape of the dataset is enormous, dimension reduction methods such as Linear Discriminant Analysis (LDA) and Principal Component Analysis(PCA) were applied to be able to project and classify and cluster genes on the lower, 2-d plots. In order to find which genes have a bigger influence on diversification, loading scores in PCA were used. Another fascinating method to find the most important genes is a Random forest, and that is the next method used in the analysis. Random forest is an improved version of the Decision tree. But how does the Decision tree stand out in comparison with Random forest? To find an answer, a Decision tree was also added to the methodology. PCA is an unsupervised clustering method, but to test its accuracy Multinomial Logistic Regression (MLR) was used, and dependent variables for MLR are first Principal Components (PCs) with the highest variations obtained earlier in PCA. To compare PCA with another unsupervised clustering method, k-means clustering was used in the analysis. Since we have included LDA and MLR methods, which assume that categorical variables, in our case it is a type of cancer, is normally distributed, it would be relevant to compare results with a method that does not make any assumptions on cancer type distribution. This method is the Support Vector Machine (SVM). 
+
+The final list of applied methods: PCA, LDA, Random Forest, Decision Tree, MLR, k-means, and SVM. In addition to it, K-fold validation and Cross-Validation were used to support the results of several classifications methods.
+
+```{r eval=FALSE, include=FALSE}
+#list of applied libraries
+#libraries used
+#library(caTools)
+#library(ggplot2)
+#library(caret)
+#library(e1071)
+#library(rpart)
+#library(factoextra)
+#library(plyr)
+#library(MASS)
+#library(randomForest)
+#library(party)
+#library(ggfortify)
+#library(nnet)
+#library(rpart.plot)
+#library(fmsb)
+```
+
+**Which method in dimensionality reduction will provide better classification/clustering and project on the two-dimensional graph?**
+
+We are going to compare supervised LDA and unsupervised PCA methods.
+
+### Linear Discriminant Analysis
+Linear Discriminant Analysis (LDA) is a dimensionality reduction technique, such as PCA. This method reduces unnecessary variables and tries to conserve important ones and get as much information as possible.
+```{r}
+library(MASS)
+lda_model <- lda(class~., data = training_data)
+
+#prediction on testing set
+prediction_lda_test <- predict(lda_model, newdata = testing_data)
+lda_accuracy <- mean(prediction_lda_test$class==testing_data$class) #testing accuracy
+lda_accuracy
+plot(lda_model)
+
+lda.data <- cbind(training_data, predict(lda_model)$x)
+library(ggplot2)
+ggplot(lda.data, aes(LD1, LD2)) +
+  geom_point(aes(color = class))
+```
+
+As we can observe in the results, the accuracy rate of LDA on the testing set is 100 %. It was capable of separating and plot classes on lower dimensions.
+
+**How accurate LDA would be with Cross-Validation method compared to regular LDA?**
+
+### LDA Cross-Validation
+
+Cross-Validation(CV) was included in this analysis to compare accuracy with regular LDA. CV was done on the training set and validated on the testing set.
+
+```{r}
+lda_model_cross_val <- lda(class~., data = training_data,
+                           trControl = trainControl(method = 'cv',
+                                                    number = 10,
+                                                    verboseIter = TRUE))
+#prediction of test
+
+lda_model_cross_val_predict = predict(lda_model_cross_val, newdata = testing_data)
+lda_cv_accuracy <- mean(lda_model_cross_val_predict$class==testing_data$class) #testing accuracy
+lda_cv_accuracy
+```
+
+The result from the LDA Cross-Validation method also was very accurate, 100%. 
+
+
+### PCA
+Principal Component Analysis (PCA) is a statistical method of reducing the dimensionality of the variables space without loss of information that uses an orthogonal transformation to separate correlated and uncorrelated observations and captures its variability.
+```{r}
+library(MASS)
+library(ggplot2)
+pca <- prcomp(training_data[-length(training_data)], scale = F)
+plot(pca$x[,1], pca$x[,2])
+pca.var <- pca$sdev^2 #calculate variation in the data for each PC. if is more than 1 it explains better
+pca.var.per <- round(pca.var/sum(pca.var)*100, 1) #percentage of each variation for PC
+barplot(pca.var.per[1:5], main = 'Scree Plot', xlab = 'Principal Components', ylab = 'Percentage Variation') #plotting the PC percentage
+#biplot(pca, scale = 0.5)
+plot(pca, type = 'l')
+cumvar <- sum(pca.var.per[1:5]) 
+#loading score
+ggplot(training_data, aes(pca$x[,1], pca$x[,2], col = class, fill =class))+
+  stat_ellipse(geom = 'polygon', col = 'black', alpha = 0.5)+ 
+  geom_point(shape = 21, col = 'black')
+```
+As a result, we can see, PCA did a good job of clustering cancer diseases. Although five Principal Components were describing less than 50% of data, plotting on PC1 and PC2 gives us a good and clear visualization of all clusters, very comparable with LDA, therefore both LDA and PCA did a decent job in dimension reduction and projecting on 2-dimensional space.
+
+
+**Which genes have the biggest impact on classification?**
+
+To answer this question, we are going to compare PCA's top ten loading scores on PC1 and PC2, and the Random Forest method.
+
+### PCA loading scores
+```{r}
+for (PC in 1:2){
+  component_scores_1 <- names(sort(abs(pca$rotation[,PC]), decreasing = T)[1:10])
+  print(PC)
+  print(pca$rotation[component_scores_1, PC])
+}
+```
+On the table above we can see the top ten genes on each axis that derives into clusters aka types of cancers. On a PC1 axis, genes with positive values push samples to the right hand side, with negative values push to the left hand side. The same logic goes to the PC2 axis, where genes with positive values push samples up, and with negative values push samples down. 
+
+For instance, gene_6733 has a positive value, thus samples with high value in this gene are pushed to the right on the PC1 axis. Simultaneously, samples with low values in the very same gene are pushed to the left-hand side on the PC1 axis. Samples with high value in gene_439 are pushed to the left-hand side, and low value is pushed to the right-hand side. The very same idea goes to the PC2 axis but samples are pushed up and down.
+
+### Random Forest
+Random forest is yet another powerful method for classification used in machine learning that is especially good for multidimensional data. It uses the idea of Decision Tree classification and applies bootstrapping.
+```{r}
+library(randomForest)
+random_forest_model <- randomForest(class~., data = training_data, importance = T)
+random_forest_model
+
+#prediction of training set
+prediction_forest_train <- predict(random_forest_model, training_data, 
+                                   type = 'class')
+table(prediction_forest_train, training_data$class)
+mean(prediction_forest_train == training_data$class)
+
+#prediction of testing set
+prediction_forest_test <- predict(random_forest_model, newdata = testing_data, 
+                                  type = 'class')
+random_forest_accuracy <- mean(prediction_forest_test== testing_data$class) #testing accuracy
+random_forest_accuracy
+table(prediction_forest_test, testing_data$class)
+
+#additional functions
+#importance(random_forest_model)
+varImpPlot(random_forest_model)
+plot(random_forest_model, type="l", main=deparse(substitute(random_forest_model)))
+```
+The accuracy rate of Random Forest is 100% on testing data, which is remarkable. The random forest method allows us to plot the most important genes for classification. As we can see in the table above (Table MeanDecreaseAccuracy), the most important genes, in general, that help us to classify the type of cancer are listed in there. In another table (Table MeanDecreasedGini), genes that are important in local terms (out of the bag) are listed. MeanDecreaseAccuracy table is more valuable for us since it indicates the most important genes in general that play a significant role in classification. 
+
+**How does Decision Tree stand out in comparison with Random Forest, and which are deciding genes in classification for this method?**
+
+To answer those questions, let us run the Decision Tree method.
+
+### Decision Tree
+A decision tree classification is another popular method in machine learning. The method splits the dataset into smaller and smaller subsets, and at the same time associated decision trees are developed.
+```{r}
+library(rpart)
+library(caret)
+decision_tree_model <- rpart(class~., data = training_data)
+decision_tree_model
+
+#prediction on train data
+prediction_decision_train <-predict(decision_tree_model, training_data, type = 'class') 
+mean(prediction_decision_train==training_data$class)
+confusionMatrix(prediction_decision_train, training_data$class)
+
+
+#prediction on testing data
+prediction_decision_test <-predict(decision_tree_model, newdata = testing_data, type = 'class')
+confusionMatrix(prediction_decision_test, testing_data$class)
+decision_tree_accuracy <- mean(prediction_decision_test==testing_data$class) #testing accuracy
+decision_tree_accuracy
+library(rpart.plot)
+prp(decision_tree_model)
+```
+
+The accuracy rate of Decision tree classification was very high. In the plot above we can see classification trees with genes and conditional values, and leaves as types of cancer. For instance, if a sample has a value in the gene_187 more or equal than 11,  it would be classified as BRCA. but if it has a value less than 11, and gene_129 has value more or equal to 9.1, it would be classified as KIRC.
+
+
+**How accurate was the PCA method and how does it stand out with another unsupervised clustering method as k-means?**
+
+To answer these questions, first of all, we have to measure the accuracy of PCA, and in order to do that, Multinomial Logistic Regression is used in this analysis. Afterward, we are going to run k-means clustering.
+
+### Multinomial Logistic Regression
+Multinomial Logistic Regression (MLR) is a predictive regression analysis for a dependent variable with more than 2 levels. In this analysis, MLR is used to test the accuracy of PCA.
+
+```{r}
+#preparation for MLR
+pca_train <- predict(pca, training_data)
+pca_train <- data.frame(pca_train, training_data$class)
+
+pca_test <- predict(pca, testing_data)
+pca_test <- data.frame(pca_test, testing_data$class)
+
+
+#multinom reg
+
+library(nnet)
+pca_train$training_data.class <- relevel(pca_train$training_data.class, 
+                                             ref = 'BRCA')
+mnom_model <- multinom(training_data.class~PC1+PC2, data = pca_train)
+#testing on train
+pca_predict_train <- predict(mnom_model, pca_train)
+mean(pca_predict_train==pca_train$training_data.class)
+#testing on test
+pca_predict_test = predict(mnom_model, newdata = pca_test)
+mnom_accuracy <- mean(pca_predict_test==pca_test$testing_data.class)
+mnom_accuracy
+```
+MLR was run on PC1 and PC2, since these components have highest variation. The accuracy on the testing set is very high. As a reference type, BRCA was indicated for this analysis. We can indicate any other type of cancer. We can conclude that the accuracy rate of PCA was very high.
+
+### K-means clustering
+K-means clustering is an unsupervised learning method, where k is a number of clusters (cluster centroids) indicated initially. The method does clustering based on the distance to the centroid clusters.
+```{r}
+library(ggfortify)
+set.seed(123)
+k_means_clust <- kmeans(data_snapshot[-length(data_snapshot)], 5, nstart =25)
+lev <- as.factor(c('COAD', 'KIRC', 'BRCA', 'PRAD', 'LUAD'))
+lev <- factor(lev, levels = c('COAD', 'KIRC', 'BRCA', 'PRAD', 'LUAD'))
+
+
+k_means_cluster_vector <- factor(c(k_means_clust[1]$cluster), labels = lev)
+
+table(data_snapshot$class, k_means_cluster_vector)
+k_mean_accuracy <- mean(k_means_cluster_vector==data_snapshot$class) #testing accuracy
+k_mean_accuracy
+
+autoplot(k_means_clust, data_snapshot, frame= T)
+
+```
+Levels for K-means were assigned according to PCA's ordering level. As we can see in the plot above, clusters founded by k-means are similar to PCA's clusters and the overall accuracy of k-means is very high, even higher than PCA's one.
+
+**How does Support Vector Machine, optimization classification method that does not make any assumptions on the distribution of types of cancer stand out in comparison with other classification methods such as LDA or MRL in terms of accuracy and performance in general?**
+
+### Support Vector Machine
+A support vector machine (SVM) is a supervised learning method perfectly suitable for classification and regression analysis. 
+```{r}
+library(e1071)
+svm_classificator = svm(formula = class~.,
+                        data = training_data,
+                        type = 'C-classification',
+                        kernel = 'radial',
+                        cost = 1)
+#prediction on training set
+prediction_svm_classif_train = predict(svm_classificator, training_data)
+table(prediction_svm_classif_train, training_data$class)
+mean(prediction_svm_classif_train==training_data$class)
+
+#prediction of test data
+prediction_svm_classif_test = predict(svm_classificator, newdata = testing_data)
+table(prediction_svm_classif_test, testing_data$class)
+svm_accuracy <- mean(prediction_svm_classif_test==testing_data$class) #testing accuracy
+svm_accuracy
+
+```
+SVM was done on the “Radial” kernel, which is good for a multidimensional dataset as we have here. Cost value, which is responsible for bias-variance tradeoff was fixed to a value equal 1. With a higher value of cost, a hyperplane would be 'flexible', and with lower value, hyperplane would be 'flatter'. The accuracy rate on the testing set was very high.
+
+**How accurate will SVM with K-Fold Validation be?**
+
+
+### SVM K-Fold Validation
+k-Fold Cross-Validation is a procedure of resampling used on a limited dataset. K is referred to as several groups or folds. In this analysis, k-fold cross-validation with SVM was done to compare results with vanilla SVM. Please note, k-fold cross-validation was done on the training set and accuracy was validated on the testing set with k=10.
+```{r}
+library(caret)
+
+folds = createFolds(training_data$class, k = 10)
+
+cv = lapply(folds, function(x){
+  training_fold = training_data[-x,]
+  test_fold = training_data[x,]
+  
+  classificator = svm(formula = class~.,
+                      data = training_fold,
+                      type = 'C-classification',
+                      kernel = 'radial',
+                      cost = 0.1)
+  y_predict = predict(classificator, newdata = test_fold[-length(testing_data)])
+  cm = table(y_predict, test_fold[,length(test_fold)])
+  return(mean(y_predict==test_fold[,length(test_fold)]))
+})
+k_fold_accuracy = mean(as.numeric(cv))
+k_fold_accuracy #testing accuracy
+```
+This time, Cost is equal to 0.1 (flatter hyperplane). As we can see, the accuracy rate on the testing set went down a bit. 
+
+
+## **Conclusion**
+
+In a table below, there are accuracy rates of used methods. As we can see in the results, all methods did a decent job in classification and clustering 5 types of cancer. We also found out the most important genes, the role of which is significant in the determination of cancer type, and we can observe it in the decision tree, random forest, and PCA's loading scores. PCA and LDA were perfect for in dimensionality reduction for this dataset as we can see in the plots. In general, all performed analyses were good in achieving the initial aim of the paper.
+
+```{r echo=FALSE}
+Method <- c('LDA', 'LDA CV', 'Random Forest', 'Decision Tree', 'PCA/MLR', 'k-means', 
+            'SVM', 'SVM kf (c=0.1)')
+Accuracy_percent <- round(c(lda_accuracy, lda_cv_accuracy, 
+                      random_forest_accuracy, decision_tree_accuracy,
+                      mnom_accuracy, k_mean_accuracy, svm_accuracy,
+                      k_fold_accuracy)*100, digits = 1)
+df <- data.frame(Method,Accuracy_percent)
+#
+library(fmsb)
+data_spider <- as.data.frame(t(data.matrix(df)))[-1,]
+colnames(data_spider) <- Method
+data_spider <- rbind(rep(100,8) , rep(0,8) , data_spider)
+radarchart(data_spider)
+#
+knitr::kable(df)
+```
+
